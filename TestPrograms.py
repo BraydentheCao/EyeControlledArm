@@ -27,15 +27,15 @@ def testPiConnectionAndPiFan():
 
     print("Fan at 60 percent speed (Medium)")
     fan.value = 0.6
-    sleep(5)
+    time.sleep(5)
     
     print("Fan at 100 percent speed (Full Blast)")
     fan.value = 1.0
-    sleep(5)
+    time.sleep(5)
     
     print("Fan OFF")
     fan.value = 0.0
-    sleep(3)
+    time.sleep(3)
 
 try:
     while True:
