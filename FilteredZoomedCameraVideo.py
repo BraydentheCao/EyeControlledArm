@@ -18,7 +18,7 @@ picam2.start()
 # Zoom in on the center of the image by a factor of 3
 
 full_w,full_h = picam2.sensor_resolution
-zoom_factor_x = 5
+zoom_factor_x = 4
 zoom_factor_y = 5
 crop_w = int(full_w/zoom_factor_x)
 crop_h = int(full_h/zoom_factor_y)
@@ -52,15 +52,15 @@ def generate_frames():
 
         # hsv & histEqualize --> Basically smooths out the brightness via CDF
         # The "commonness" of each brightness is the same, the brightness of each pixel retains the same percentile
-        hsv[:,:,2] = cv2.equalizeHist(hsv[:,:,2])
+        #hsv[:,:,2] = cv2.equalizeHist(hsv[:,:,2])
         #finalFrame = cv2.cvtColor(hsv,cv2.COLOR_HSV2BGR)
 
         
         # The arguments inside v[] are a 2d array of true/false values. If true, the values in v are overriden to be 0
         # This is called masking
         v = hsv[:,:,2]
-        v[(v<50)] = 0
-        v[(v>=50)] = 255
+        v[(v<70)] = 0
+        v[(v>=70)] = 255
         hsv[:,:,2] = v
         
 
@@ -68,8 +68,8 @@ def generate_frames():
 
         kernel = np.ones((3,3), np.uint8)
         
-        hsv[:,:,2] = cv2.erode(hsv[:,:,2], kernel, iterations = 3)
-        hsv[:,:,2] = cv2.dilate(hsv[:,:,2], kernel, iterations = 3)
+        hsv[:,:,2] = cv2.erode(hsv[:,:,2], kernel, iterations = 2)
+        hsv[:,:,2] = cv2.dilate(hsv[:,:,2], kernel, iterations = 2)
         
         #_ , threshFrameWhite = cv2.threshold(histEqualizedFrameBGR, )
         #_ , threshFrame = cv2.threshold(histEqualizedFrameBGR, 225, 255, cv2.THRESH_BINARY)
@@ -91,14 +91,14 @@ def generate_frames():
               cX = int(M["m10"] / M["m00"])
               cY = int(M["m01"] / M["m00"])
 
-              cv2.drawContours(finalFrame, [largest], -1, (0, 255, 0), 2)
-              cv2.circle(finalFrame, (cX, cY), 5, (255, 0, 0), -1)
-              cv2.line(finalFrame, (cX, 0), (cX, frame.shape[0]), (255, 0, 0), 1)
-              cv2.line(finalFrame, (0, cY), (frame.shape[1], cY), (255, 0, 0), 1)
+              cv2.drawContours(frame, [largest], -1, (0, 255, 0), 2)
+              cv2.circle(frame, (cX, cY), 5, (255, 0, 0), -1)
+              cv2.line(frame, (cX, 0), (cX, frame.shape[0]), (255, 0, 0), 1)
+              cv2.line(frame, (0, cY), (frame.shape[1], cY), (255, 0, 0), 1)
         
 
         #Convert to JPEG for streaming
-        ret, buffer = cv2.imencode('.jpg',finalFrame)
+        ret, buffer = cv2.imencode('.jpg',frame)
         if not ret:
             continue
 
