@@ -2,12 +2,16 @@ from flask import Flask, Response, render_template_string
 from picamera2 import Picamera2
 import numpy as np
 import cv2
+from queue import Queue
+import time
+
 
 """
 TestZoom.py combined with FilteredCameraVideo.py
 """
 
 app = Flask(__name__)
+start_time = int(time.perf_counter()) #This means the eye zero funciton won't be perfectly three seconds, it's 3-4 second tech, but its much faster calculation wise
 
 # Initialize Picamera2
 picam2 = Picamera2()
@@ -29,7 +33,11 @@ CENTER_X = 800//(2*zoom_factor_x)
 
 picam2.set_controls({"ScalerCrop": (crop_xInit, crop_yInit, crop_w, crop_h)})
 
+
+
 def generate_frames():
+    global zeroX, zeroY, changeX, changeY
+    zeroX, zeroY, changeX, changeY = -1, -1, 0, 0
     while True:
         # Get a frame from picam, do initial set up to make sure it can be filtered
         frame = picam2.capture_array()
@@ -95,6 +103,15 @@ def generate_frames():
               cv2.circle(frame, (cX, cY), 5, (255, 0, 0), -1)
               cv2.line(frame, (cX, 0), (cX, frame.shape[0]), (255, 0, 0), 1)
               cv2.line(frame, (0, cY), (frame.shape[1], cY), (255, 0, 0), 1)
+
+              if zeroX == -1:
+                zeroX, zeroY = ZeroPositionAlgorithm(cX,cY)    
+              else:
+                changeX, changeY = EyeTrackingAlgorithm(cX, cY, sensitivity=1)
+
+              cv2.putText(frame, f"Change X: {changeX} | Change Y: {changeY}",(10,30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200,200,200), 2)
+              cv2.putText(frame, f"Position X: {cX} | Position Y: {cX}",(10,60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200,200,200), 2)
+              cv2.putText(frame, f"Zero position X: {zeroX} | Zero position Y: {zeroY}",(10,90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200,200,200), 2)
         
 
         #Convert to JPEG for streaming
@@ -119,10 +136,72 @@ HTML_TEMPLATE = """
   </head>
   <body>
     <h1>Live Video Feed</h1>
-    <img src="{{ url_for('video_feed') }}" width="400" height="300">
+    <img src="{{ url_for('video_feed') }}" width="800" height="600">
   </body>
 </html>
 """
+
+QUEUE_SIZE = 5
+eyeDataX = Queue(maxsize = QUEUE_SIZE)
+eyeDataY = Queue(maxsize = QUEUE_SIZE)
+changeX, changeY = 0,0
+
+def EyeTrackingAlgorithm(x, y, sensitivity):
+    """
+    This function adds incoming xy data of the eye's 
+    center to a list, then calculates average change, 
+    returns a constant string of eye change data
+
+    sensitivity changes how much the arm will move based on eye data
+    """      
+
+    global changeX, changeY
+
+    if x > 150: # This is to prevent measuring the black part of my eye 
+      if eyeDataX.full():
+        eyeDataX.get()
+        eyeDataY.get()
+
+      eyeDataX.put(x)
+      eyeDataY.put(y)
+
+      changeX = x - int(sum(eyeDataX.queue)/QUEUE_SIZE)
+      changeY = y - int(sum(eyeDataY.queue)/QUEUE_SIZE)
+
+    else:
+       changeX = 0
+       changeY = 0
+    
+    return changeX, changeY
+    
+
+eyeZeroDataX = Queue(maxsize = 50)
+eyeZeroDataY = Queue(maxsize = 50)
+
+def ZeroPositionAlgorithm(x,y):
+    global start_time
+    current_time = int(time.perf_counter())
+    """
+    Calculates the average x and y position of the eye after three seconds 
+    of data collection
+    returns average of x and y position of the eye
+    """
+
+    eyeZeroDataX.put(x)
+    eyeZeroDataX.put(y)
+
+    print(f"Current time: {current_time}")
+    print(f"Start time: {start_time}")
+    print(f"diff: {current_time - start_time}")
+    print(f"Queue size: {eyeZeroDataX.qsize()}")
+    
+    #if ((current_time - start_time) >= 3):
+    if eyeZeroDataX.full() == True:
+      start_time = current_time
+      return (sum(eyeDataX.queue)/50 , sum(eyeDataX.queue)/50)
+
+    return -1,-1
+
 
 @app.route('/')
 def index():
