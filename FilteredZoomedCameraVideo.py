@@ -36,8 +36,8 @@ picam2.set_controls({"ScalerCrop": (crop_xInit, crop_yInit, crop_w, crop_h)})
 
 
 def generate_frames():
-    global zeroX, zeroY, changeX, changeY
-    zeroX, zeroY, changeX, changeY = -1, -1, 0, 0
+    global zeroX, zeroY, changeX, changeY, relativeX, relativeY
+    zeroX, zeroY, changeX, changeY, relativeX, relativeY = -1, -1, 0, 0, 0, 0
     while True:
         # Get a frame from picam, do initial set up to make sure it can be filtered
         frame = picam2.capture_array()
@@ -100,18 +100,33 @@ def generate_frames():
               cY = int(M["m01"] / M["m00"])
 
               cv2.drawContours(frame, [largest], -1, (0, 255, 0), 2)
+
+              # Draw current position of the eye
               cv2.circle(frame, (cX, cY), 5, (255, 0, 0), -1)
               cv2.line(frame, (cX, 0), (cX, frame.shape[0]), (255, 0, 0), 1)
               cv2.line(frame, (0, cY), (frame.shape[1], cY), (255, 0, 0), 1)
 
+              # Draw zero position of the eye  
+
+              cv2.circle(frame, (zeroX, zeroY), 5, (0, 150, 250), -1)
+              cv2.line(frame, (zeroX, 0), (zeroX, frame.shape[0]), (0, 150, 250), 1)
+              cv2.line(frame, (0, zeroY), (frame.shape[1], zeroY), (0, 150, 250), 1)
+
               if zeroX == -1:
-                zeroX, zeroY = ZeroPositionAlgorithm(cX,cY)    
+                zeroX, zeroY = ZeroPositionAlgorithm(cX,cY)  
+                relativeX = zeroX
+                relativeY = zeroY  
               else:
                 changeX, changeY = EyeTrackingAlgorithm(cX, cY, sensitivity=1)
 
-              cv2.putText(frame, f"Change X: {changeX} | Change Y: {changeY}",(10,30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200,200,200), 2)
-              cv2.putText(frame, f"Position X: {cX} | Position Y: {cX}",(10,60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200,200,200), 2)
-              cv2.putText(frame, f"Zero position X: {zeroX} | Zero position Y: {zeroY}",(10,90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200,200,200), 2)
+              if(x > 150):
+                relativeX = cX - zeroX
+                relativeY = cY - zeroY  
+
+              cv2.putText(frame, f"Change X: {changeX} | Change Y: {changeY}",(10,30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (20,20,20), 2)
+              cv2.putText(frame, f"Position X: {cX} | Position Y: {cX}",(10,60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (20,20,20), 2)
+              cv2.putText(frame, f"Zero position X: {zeroX} | Zero position Y: {zeroY}",(10,90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (20,20,20), 2)
+              cv2.putText(frame, f"Relative X: {relativeX} | Relative Y: {relativeY}",(10,120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (20,20,20), 2)
         
 
         #Convert to JPEG for streaming
@@ -157,7 +172,7 @@ def EyeTrackingAlgorithm(x, y, sensitivity):
 
     global changeX, changeY
 
-    if x > 150: # This is to prevent measuring the black part of my eye 
+    if x > 150: # This is to prevent measuring the eyelashes that are tracked when I blink. My eye never goes below x = 200
       if eyeDataX.full():
         eyeDataX.get()
         eyeDataY.get()
@@ -175,30 +190,41 @@ def EyeTrackingAlgorithm(x, y, sensitivity):
     return changeX, changeY
     
 
-eyeZeroDataX = Queue(maxsize = 50)
-eyeZeroDataY = Queue(maxsize = 50)
+ZEROQUEUE_MAX_SIZE = 25
+eyeZeroDataX = Queue(maxsize = ZEROQUEUE_MAX_SIZE)
+eyeZeroDataY = Queue(maxsize = ZEROQUEUE_MAX_SIZE)
 
 def ZeroPositionAlgorithm(x,y):
-    global start_time
+    global start_time, eyeZeroDataX, eyeZeroDataY
     current_time = int(time.perf_counter())
     """
     Calculates the average x and y position of the eye after three seconds 
     of data collection
     returns average of x and y position of the eye
     """
+    if x > 150:
+      eyeZeroDataX.put(x)
+      eyeZeroDataY.put(y)
 
-    eyeZeroDataX.put(x)
-    eyeZeroDataX.put(y)
-
-    print(f"Current time: {current_time}")
-    print(f"Start time: {start_time}")
-    print(f"diff: {current_time - start_time}")
+    #print(f"Current time: {current_time}")
+    #print(f"Start time: {start_time}")
+    #print(f"diff: {current_time - start_time}")
     print(f"Queue size: {eyeZeroDataX.qsize()}")
+    print(x)
     
     #if ((current_time - start_time) >= 3):
     if eyeZeroDataX.full() == True:
       start_time = current_time
-      return (sum(eyeDataX.queue)/50 , sum(eyeDataX.queue)/50)
+      print(int(sum(eyeZeroDataX.queue)))
+
+      #reset the eyeZeroDataX and Y queues to be zero
+      xZeroDataSum = sum(eyeZeroDataX.queue)
+      yZeroDataSum = sum(eyeZeroDataY.queue)
+
+      eyeZeroDataX = Queue(maxsize = ZEROQUEUE_MAX_SIZE)
+      eyeZeroDataY = Queue(maxsize = ZEROQUEUE_MAX_SIZE)
+
+      return (int(xZeroDataSum/ZEROQUEUE_MAX_SIZE) , int(yZeroDataSum/ZEROQUEUE_MAX_SIZE))
 
     return -1,-1
 
